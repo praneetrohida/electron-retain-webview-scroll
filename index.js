@@ -104,7 +104,6 @@ Scroller.prototype.preload = function() {
     });
   });
   ipcRenderer.on(EVENTS.SCROLL_TO, function(event, position) {
-    console.log("Scrol to event received");
     window.scrollTo(position.x, position.y);
     ipcRenderer.sendToHost(EVENTS.DID_SCROLL_TO, { position: position });
   });
