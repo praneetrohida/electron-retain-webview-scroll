@@ -10,7 +10,7 @@ function Scroller() {
 
 // Connect scroller to a webview
 // TODO: Allow array of selectors, allow element or array of elements
-Scroller.prototype.add = function(selector) {
+Scroller.prototype.add = function (selector) {
   let self = this;
   selector = selector || "webview";
   let webview = document.querySelector(selector);
@@ -25,41 +25,52 @@ Scroller.prototype.add = function(selector) {
   }
   let tracker = new ScrollTracker(selector);
 
+  const scrollToLastPosition = () => {
+    let position = tracker.getScrollPosition();
+    webview.send(EVENTS.SCROLL_TO, position);
+    tracker.motion = NAVTYPE.NEW_PAGE;
+  };
+
   // Set up webview event listeners
-  webview.addEventListener("ipc-message", function(e) {
+  webview.addEventListener("ipc-message", function (e) {
     if (e.channel === EVENTS.DID_SCROLL) {
       self.didScroll.call(self, selector, e.args[0].position);
     }
+    if (e.channel === EVENTS.REQUEST_SCROLL) {
+      if (tracker.motion === NAVTYPE.NEW_PAGE) {
+        tracker.index -= 1;
+        scrollToLastPosition();
+      }
+    }
   });
-  webview.addEventListener("did-navigate", function() {
+  webview.addEventListener("did-navigate", function () {
     self.didNavigate.call(self, selector);
   });
   //webview.addEventListener('did-navigate-in-page', function() {
   //  Currently unused
   //})
-  webview.addEventListener("did-finish-load", function() {
+
+  webview.addEventListener("did-finish-load", function () {
     if (tracker.motion !== NAVTYPE.NEW_PAGE) {
-      let position = tracker.getScrollPosition();
-      webview.send(EVENTS.SCROLL_TO, position);
-      tracker.motion = NAVTYPE.NEW_PAGE;
+      scrollToLastPosition();
     }
   });
 
   // Hook into the webview navigation functions
   tracker.webviewGoBack = webview.goBack;
-  webview.goBack = function() {
+  webview.goBack = function () {
     tracker.back();
     tracker.webviewGoBack.call(webview);
     tracker.motion = NAVTYPE.BACK;
   };
   tracker.webviewGoForward = webview.goForward;
-  webview.goForward = function() {
+  webview.goForward = function () {
     tracker.forward();
     tracker.webviewGoForward.call(webview);
     tracker.motion = NAVTYPE.FORWARD;
   };
   tracker.webviewReload = webview.reload;
-  webview.reload = function() {
+  webview.reload = function () {
     tracker.reload();
     tracker.webviewReload.call(webview);
     tracker.motion = NAVTYPE.RELOAD;
@@ -79,11 +90,11 @@ Scroller.prototype.add = function(selector) {
 //
 // Event Handlers
 //
-Scroller.prototype.didScroll = function(selector, position) {
+Scroller.prototype.didScroll = function (selector, position) {
   this.trackers.get(selector).didScroll(position);
 };
 
-Scroller.prototype.didNavigate = function(selector) {
+Scroller.prototype.didNavigate = function (selector) {
   let webview = document.querySelector(selector);
   let tracker = this.trackers.get(selector);
   tracker.didNavigate(webview.getURL());
@@ -92,19 +103,26 @@ Scroller.prototype.didNavigate = function(selector) {
 //
 // Preload Method
 //
-Scroller.prototype.preload = function() {
-  document.addEventListener("DOMContentLoaded", function() {
-    window.addEventListener("scroll", function(event) {
+Scroller.prototype.preload = function () {
+  document.addEventListener("DOMContentLoaded", function () {
+    if (performance.navigation.type === 1) {
+      ipcRenderer.sendToHost(EVENTS.REQUEST_SCROLL);
+    }
+    window.addEventListener("scroll", function (event) {
       ipcRenderer.sendToHost(EVENTS.DID_SCROLL, {
         position: {
           x: window.scrollX,
-          y: window.scrollY
-        }
+          y: window.scrollY,
+        },
       });
     });
   });
-  ipcRenderer.on(EVENTS.SCROLL_TO, function(event, position) {
+  ipcRenderer.on(EVENTS.SCROLL_TO, function (event, position) {
+    window.sizzyRestoringScroll = true;
     window.scrollTo(position.x, position.y);
+    setTimeout(() => {
+      window.sizzyRestoringScroll = false;
+    }, 200);
     ipcRenderer.sendToHost(EVENTS.DID_SCROLL_TO, { position: position });
   });
 };
